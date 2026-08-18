@@ -1,20 +1,31 @@
 from datetime import datetime, timezone
-
-from sqlalchemy import Numeric, DateTime, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
-
-from app.core.database import Base
+from typing import Optional
+from pydantic import BaseModel, Field
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class Referral(Base):
-    __tablename__ = "referrals"
+class Referral(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    referrer_id: str
+    referred_id: str
+    bonus_amount: float = 0.0
+    created_at: datetime = Field(default_factory=_utcnow)
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    referrer_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    referred_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
-    bonus_amount: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
+
+
+# MongoDB document helper
+class ReferralDocument(dict):
+    @staticmethod
+    def from_model(referral: Referral) -> dict:
+        return {
+            "referrer_id": referral.referrer_id,
+            "referred_id": referral.referred_id,
+            "bonus_amount": referral.bonus_amount,
+            "created_at": _utcnow(),
+        }

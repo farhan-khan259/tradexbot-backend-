@@ -17,8 +17,8 @@ class TransactionCreate(BaseModel):
 class TransactionPublic(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
-    user_id: int
+    id: str
+    user_id: str
     type: TransactionType
     status: TransactionStatus
     amount: float

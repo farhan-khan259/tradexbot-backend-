@@ -1,39 +1,58 @@
 from datetime import datetime, timezone
-
-from sqlalchemy import String, Boolean, Numeric, DateTime, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from typing import Optional
+from pydantic import BaseModel, Field, EmailStr
+from bson import ObjectId
 
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-class User(Base):
-    __tablename__ = "users"
+class UserBase(BaseModel):
+    email: EmailStr
+    full_name: str
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    full_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
+class UserCreate(UserBase):
+    password: str
 
-    # Simulated demo balance — not real money.
-    balance: Mapped[float] = mapped_column(Numeric(18, 2), default=0)
 
-    # Referral system
-    referral_code: Mapped[str] = mapped_column(String(12), unique=True, index=True)
-    referred_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+class User(UserBase):
+    id: Optional[str] = Field(None, alias="_id")
+    hashed_password: str
+    is_active: bool = True
+    is_admin: bool = False
+    balance: float = 0.0
+    purchased_bot_ids: list[str] = []
+    referral_code: str
+    referred_by_id: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    password_reset_otp: Optional[str] = None
+    password_reset_expires_at: Optional[datetime] = None
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    password_reset_otp: Mapped[str | None] = mapped_column(String(12), nullable=True)
-    password_reset_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
 
-    transactions: Mapped[list["Transaction"]] = relationship(
-        back_populates="user", cascade="all, delete-orphan"
-    )
+
+# MongoDB document representation
+class UserDocument(dict):
+    """Helper to create user documents for MongoDB"""
+    
+    @staticmethod
+    def from_model(user: User, hashed_password: str) -> dict:
+        doc = {
+            "email": user.email,
+            "full_name": user.full_name,
+            "hashed_password": hashed_password,
+            "is_active": user.is_active,
+            "is_admin": user.is_admin,
+            "balance": user.balance,
+            "purchased_bot_ids": user.purchased_bot_ids,
+            "referral_code": user.referral_code,
+            "referred_by_id": user.referred_by_id,
+            "created_at": _utcnow(),
+            "password_reset_otp": user.password_reset_otp,
+            "password_reset_expires_at": user.password_reset_expires_at,
+        }
+        return doc

@@ -3,14 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from sqlalchemy import inspect, text
 
 import random
 from typing import Dict, List
 
 from app.core.config import settings
 from app.services.outcome_cycle import generate_balanced_outcomes
-from app.core.database import Base, engine, SessionLocal
+from app.core.database import connect_to_mongo, close_mongo_connection, get_db
 from app.api.routes import auth, transactions, referrals, admin, bot
 from app.services.seed import seed_admin
 
@@ -50,47 +49,18 @@ def broadcast_update(account_id: str, message: Dict) -> None:
                 pass
 
 
-def _ensure_runtime_columns() -> None:
-    inspector = inspect(engine)
-
-    transaction_columns = {column["name"] for column in inspector.get_columns("transactions")}
-    user_columns = {column["name"] for column in inspector.get_columns("users")}
-
-    statements: list[str] = []
-    if "screenshot_data" not in transaction_columns:
-        statements.append("ALTER TABLE transactions ADD COLUMN screenshot_data TEXT")
-    if "account_name" not in transaction_columns:
-        statements.append("ALTER TABLE transactions ADD COLUMN account_name VARCHAR(120)")
-    if "wallet_address" not in transaction_columns:
-        statements.append("ALTER TABLE transactions ADD COLUMN wallet_address VARCHAR(255)")
-    if "network" not in transaction_columns:
-        statements.append("ALTER TABLE transactions ADD COLUMN network VARCHAR(50)")
-    if "password_reset_otp" not in user_columns:
-        statements.append("ALTER TABLE users ADD COLUMN password_reset_otp VARCHAR(12)")
-    if "password_reset_expires_at" not in user_columns:
-        statements.append("ALTER TABLE users ADD COLUMN password_reset_expires_at TIMESTAMP WITH TIME ZONE")
-
-    if not statements:
-        return
-
-    with engine.begin() as connection:
-        for statement in statements:
-            connection.execute(text(statement))
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Demo convenience: auto-create tables and seed an admin on startup.
-    # For Supabase, you can instead run db/schema.sql and set AUTO_CREATE_TABLES=false.
-    if settings.AUTO_CREATE_TABLES:
-        Base.metadata.create_all(bind=engine)
-    _ensure_runtime_columns()
-    db = SessionLocal()
+    # Connect to MongoDB on startup
+    connect_to_mongo()
+    db = get_db()
     try:
         seed_admin(db)
-    finally:
-        db.close()
+    except Exception as e:
+        print(f"Warning: Could not seed admin: {e}")
     yield
+    # Close MongoDB connection on shutdown
+    close_mongo_connection()
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
@@ -118,6 +88,7 @@ app.include_router(bot.router, prefix=api)
 
 
 # Pydantic models for account endpoints
+
 class TradeRequest(BaseModel):
     stake: float
 

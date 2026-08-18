@@ -14,16 +14,11 @@ class Settings(BaseSettings):
     PROJECT_NAME: str = "Tradeify"
     API_V1_PREFIX: str = "/api/v1"
 
-    # Supabase Postgres connection string (see backend README for how to get it).
-    DATABASE_URL: str = "postgresql+psycopg://tradeify:tradeify@localhost:5432/tradeify"
-    # Set true when using Supabase's transaction pooler (port 6543).
-    DB_USE_NULL_POOL: bool = False
-    # Auto-create tables on startup. Turn off once you manage schema via db/schema.sql.
+    # MongoDB connection
+    MONGODB_URL: str = "mongodb://localhost:27017"
+    MONGODB_DB_NAME: str = "tradify"
+    # Auto-create indexes on startup
     AUTO_CREATE_TABLES: bool = True
-
-    # Optional: only needed if you later use the supabase-py client / Storage / Auth.
-    SUPABASE_URL: str = ""
-    SUPABASE_SERVICE_KEY: str = ""
 
     SECRET_KEY: str = "change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24

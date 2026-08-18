@@ -1,10 +1,7 @@
 import enum
 from datetime import datetime, timezone
-
-from sqlalchemy import String, Numeric, DateTime, ForeignKey, Enum as SAEnum, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
-
-from app.core.database import Base
+from typing import Optional
+from pydantic import BaseModel, Field
 
 
 def _utcnow() -> datetime:
@@ -23,24 +20,39 @@ class TransactionStatus(str, enum.Enum):
     rejected = "rejected"
 
 
-class Transaction(Base):
-    __tablename__ = "transactions"
+class Transaction(BaseModel):
+    id: Optional[str] = Field(None, alias="_id")
+    user_id: str
+    type: TransactionType
+    status: TransactionStatus = TransactionStatus.pending
+    amount: float
+    note: Optional[str] = None
+    screenshot_data: Optional[str] = None
+    account_name: Optional[str] = None
+    wallet_address: Optional[str] = None
+    network: Optional[str] = None
+    created_at: datetime = Field(default_factory=_utcnow)
+    resolved_at: Optional[datetime] = None
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    class Config:
+        populate_by_name = True
+        arbitrary_types_allowed = True
 
-    type: Mapped[TransactionType] = mapped_column(SAEnum(TransactionType), nullable=False)
-    status: Mapped[TransactionStatus] = mapped_column(
-        SAEnum(TransactionStatus), default=TransactionStatus.pending
-    )
-    amount: Mapped[float] = mapped_column(Numeric(18, 2), nullable=False)
-    note: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    screenshot_data: Mapped[str | None] = mapped_column(Text, nullable=True)
-    account_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    wallet_address: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    network: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    user: Mapped["User"] = relationship(back_populates="transactions")
+# MongoDB document helper
+class TransactionDocument(dict):
+    @staticmethod
+    def from_model(tx: Transaction) -> dict:
+        return {
+            "user_id": tx.user_id,
+            "type": tx.type.value,
+            "status": tx.status.value,
+            "amount": tx.amount,
+            "note": tx.note,
+            "screenshot_data": tx.screenshot_data,
+            "account_name": tx.account_name,
+            "wallet_address": tx.wallet_address,
+            "network": tx.network,
+            "created_at": _utcnow(),
+            "resolved_at": tx.resolved_at,
+        }

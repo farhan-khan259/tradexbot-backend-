@@ -1,30 +1,58 @@
-from collections.abc import Generator
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
-from sqlalchemy.pool import NullPool
-
+from pymongo import MongoClient, ASCENDING
+from pymongo.database import Database
 from app.core.config import settings
 
-# Supabase note:
-#   - Session pooler (port 5432, *.pooler.supabase.com)  -> default QueuePool is fine.
-#   - Transaction pooler (port 6543)                     -> set DB_USE_NULL_POOL=true,
-#     since pgBouncer in transaction mode is incompatible with client-side connection pooling.
-_engine_kwargs: dict = {"pool_pre_ping": True, "future": True}
-if settings.DB_USE_NULL_POOL:
-    _engine_kwargs["poolclass"] = NullPool
-
-engine = create_engine(settings.DATABASE_URL, **_engine_kwargs)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+# MongoDB connection
+_client: MongoClient | None = None
+_db: Database | None = None
 
 
-class Base(DeclarativeBase):
-    pass
+def connect_to_mongo() -> None:
+    """Connect to MongoDB and create indexes"""
+    global _client, _db
+    _client = MongoClient(settings.MONGODB_URL)
+    _db = _client[settings.MONGODB_DB_NAME]
+    
+    # Create indexes
+    if settings.AUTO_CREATE_TABLES:
+        _create_indexes()
 
 
-def get_db() -> Generator[Session, None, None]:
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+def close_mongo_connection() -> None:
+    """Close MongoDB connection"""
+    global _client
+    if _client:
+        _client.close()
+
+
+def _create_indexes() -> None:
+    """Create MongoDB indexes for collections"""
+    if _db is None:
+        return
+    
+    # Users collection indexes
+    _db.users.create_index([("email", ASCENDING)], unique=True)
+    _db.users.create_index([("referral_code", ASCENDING)], unique=True)
+    _db.users.create_index([("created_at", ASCENDING)])
+    
+    # Transactions collection indexes
+    _db.transactions.create_index([("user_id", ASCENDING)])
+    _db.transactions.create_index([("created_at", ASCENDING)])
+    _db.transactions.create_index([("status", ASCENDING)])
+    
+    # Referrals collection indexes
+    _db.referrals.create_index([("referrer_id", ASCENDING)])
+    _db.referrals.create_index([("referred_id", ASCENDING)], unique=True)
+
+
+def get_db() -> Database:
+    """Get MongoDB database instance"""
+    if _db is None:
+        connect_to_mongo()
+    return _db
+
+
+def get_collection(collection_name: str):
+    """Get MongoDB collection"""
+    db = get_db()
+    return db[collection_name]
