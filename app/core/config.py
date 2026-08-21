@@ -11,12 +11,12 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    PROJECT_NAME: str = "Tradeify"
+    PROJECT_NAME: str = "TradeXBot"
     API_V1_PREFIX: str = "/api/v1"
 
     # MongoDB connection
     MONGODB_URL: str = "mongodb://localhost:27017"
-    MONGODB_DB_NAME: str = "tradify"
+    MONGODB_DB_NAME: str = "tradexbot"
     # Auto-create indexes on startup
     AUTO_CREATE_TABLES: bool = True
 
@@ -39,7 +39,7 @@ class Settings(BaseSettings):
 
     BACKEND_CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    FIRST_ADMIN_EMAIL: str = "admin@tradeify.com"
+    FIRST_ADMIN_EMAIL: str = "admin@tradexbot.com"
     FIRST_ADMIN_PASSWORD: str = "ChangeMe123!"
 
     @property

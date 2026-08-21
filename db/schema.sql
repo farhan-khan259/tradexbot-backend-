@@ -1,4 +1,4 @@
--- Tradeify schema for Supabase Postgres.
+-- TradeXBot schema for Supabase Postgres.
 -- Run this in the Supabase Dashboard -> SQL Editor, then set AUTO_CREATE_TABLES=false.
 -- Mirrors the SQLAlchemy models in app/models/.
 

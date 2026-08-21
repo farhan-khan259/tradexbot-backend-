@@ -1,4 +1,4 @@
-"""Quick Supabase/Postgres connectivity + schema check for the Tradeify backend.
+"""Quick Supabase/Postgres connectivity + schema check for the TradeXBot backend.
 
 Run from the backend/ directory:
 
@@ -26,7 +26,7 @@ from sqlalchemy.exc import SQLAlchemyError  # noqa: E402
 from app.core.config import settings  # noqa: E402
 
 EXPECTED_TABLES = ["users", "transactions", "referrals"]
-LOCAL_DEFAULT = "postgresql+psycopg://tradeify:tradeify@localhost:5432/tradeify"
+LOCAL_DEFAULT = "postgresql+psycopg://tradexbot:tradexbot@localhost:5432/tradexbot"
 
 
 def fail(msg: str) -> None:
@@ -35,7 +35,7 @@ def fail(msg: str) -> None:
 
 
 def main() -> None:
-    print("Tradeify - database connection check\n")
+    print("TradeXBot - database connection check\n")
 
     url = settings.DATABASE_URL
     if not url:

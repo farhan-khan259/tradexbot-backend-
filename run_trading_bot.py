@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Tradify Trading Bot CLI
+TradeXBot Trading Bot CLI
 Run trading sessions with detailed technical analysis logs
 """
 import sys
@@ -147,7 +147,7 @@ def run_multi_session_demo(num_sessions=3):
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(
-        description="Tradify Trading Bot - Real-time trading simulation with technical analysis"
+        description="TradeXBot Trading Bot - Real-time trading simulation with technical analysis"
     )
     parser.add_argument("--mode", choices=["interactive", "demo", "multi"], default="interactive",
                        help="Trading mode: interactive (manual), demo (auto), or multi (multiple sessions)")
@@ -160,7 +160,7 @@ def main():
     args = parser.parse_args()
     
     print("\n" + "="*60)
-    print("  TRADIFY TRADING BOT - AI Trading Engine")
+    print("  TradeXBot Trading Bot - AI Trading Engine")
     print("  With Advanced Technical Analysis")
     print("="*60 + "\n")
     
