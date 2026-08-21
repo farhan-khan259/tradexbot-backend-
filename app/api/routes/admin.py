@@ -115,12 +115,7 @@ def publish_notification(notification_id: str, _: dict = Depends(get_current_adm
 
 @router.get("/kyc")
 def list_kyc(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
-    return [{**doc, "id": str(doc.pop("_id"))} for doc in db.kyc.find({}, {"identity_document": 0, "proof_of_address": 0, "selfie_document": 0}).sort("updated_at", -1)]
-
-
-@router.get("/audit-logs")
-def audit_logs(limit: int = 100, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
-    return [{**doc, "id": str(doc.pop("_id"))} for doc in db.audit_logs.find().sort("created_at", -1).limit(min(max(limit, 1), 500))]
+    return [{**{key: value for key, value in doc.items() if key != "_id"}, "id": str(doc["_id"])} for doc in db.kyc.find().sort("updated_at", -1)]
 
 
 @router.get("/kyc/{user_id}/documents")

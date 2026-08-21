@@ -12,7 +12,6 @@ class TransactionCreate(BaseModel):
     account_name: str | None = Field(default=None, max_length=120)
     wallet_address: str | None = Field(default=None, max_length=255)
     network: str | None = Field(default=None, max_length=50)
-    two_factor_code: str | None = Field(default=None, min_length=6, max_length=6, pattern=r"^\d{6}$")
 
 
 class TransactionPublic(BaseModel):

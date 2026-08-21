@@ -25,7 +25,9 @@ class KYCSubmission(BaseModel):
 @router.get("")
 def get_kyc(user: dict = Depends(get_current_user), db: Database = Depends(get_db)):
     submission = db.kyc.find_one({"user_id": str(user["_id"])}, {"identity_document": 0, "proof_of_address": 0, "selfie_document": 0})
-    return submission or {"status": "not_verified"}
+    if not submission:
+        return {"status": "not_verified"}
+    return {"status": submission.get("status", "not_verified")}
 
 
 @router.post("")
