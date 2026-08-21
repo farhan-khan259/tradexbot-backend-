@@ -63,6 +63,8 @@ def register(payload: RegisterRequest, db: Database = Depends(get_db)):
         "is_active": True,
         "is_admin": False,
         "balance": 0.0,
+        "basic_funded_balance": 0.0,
+        "pro_funded_balance": 0.0,
         "purchased_bot_ids": [],
         "referral_code": generate_referral_code(db),
         "referred_by_id": str(referrer["_id"]) if referrer else None,

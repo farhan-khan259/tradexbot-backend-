@@ -287,6 +287,7 @@ import random
 from typing import List
 from datetime import datetime
 from pymongo.database import Database
+from pymongo import ReturnDocument
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -294,6 +295,7 @@ from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.schemas.bot import BotPurchaseRequest, BotPurchaseResponse, BotTradeRequest, BotTradeResponse
 from app.services.trading_engine import trading_engine
+from app.services.outcome_cycle import generate_random_win_rate_outcomes
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
@@ -305,8 +307,10 @@ BOT_PRICES = {
     "pro-bot": 60.0,
 }
 FUNDED_BOT_CREDITS = {"basic-funded": 500.0, "pro-funded": 1000.0}
+FUNDED_WIN_COUNTS = {"basic-funded": 6, "pro-funded": 8}
 _user_sessions: dict[str, dict] = {}
 _user_pending_trades: dict[str, dict] = {}
+_user_outcome_cycles: dict[str, list[str]] = {}
 
 
 def compute_trade_delta(amount: float, win: bool) -> float:
@@ -331,16 +335,17 @@ def purchase_bot(
         raise HTTPException(status_code=400, detail="This bot has already been purchased")
 
     credit = FUNDED_BOT_CREDITS.get(bot_id, 0.0)
+    funded_field = f"{bot_id.replace('-', '_')}_balance" if credit else None
+    update_fields = {"$inc": {"balance": -price}, "$addToSet": {"purchased_bot_ids": bot_id}}
+    if funded_field:
+        update_fields["$set"] = {funded_field: credit}
     result = db.users.find_one_and_update(
         {
             "_id": user["_id"],
             "balance": {"$gte": price},
             "purchased_bot_ids": {"$ne": bot_id},
         },
-        {
-            "$inc": {"balance": credit - price},
-            "$addToSet": {"purchased_bot_ids": bot_id},
-        },
+        update_fields,
         return_document=True,
     )
     if result is None:
@@ -354,6 +359,7 @@ def purchase_bot(
         balance=round(float(result.get("balance", 0)), 2),
         purchased_bot_ids=result.get("purchased_bot_ids", []),
         funded_credit=credit,
+        funded_balance=float(result.get(funded_field, 0)) if funded_field else 0,
     )
 
 
@@ -397,8 +403,16 @@ def execute_bot_trade(
 ):
     """Execute a bot trade (start or settle phase)"""
     user_id = str(user["_id"])
-    balance = float(user.get("balance", 0))
     users_collection = db.users
+    account_type = payload.account_type
+    balance_field = {
+        "wallet": "balance",
+        "basic-funded": "basic_funded_balance",
+        "pro-funded": "pro_funded_balance",
+    }[account_type]
+    if account_type != "wallet" and account_type not in user.get("purchased_bot_ids", []):
+        raise HTTPException(status_code=403, detail="Purchase this funded account before trading")
+    balance = float(user.get(balance_field, 0))
     
     if payload.phase not in {"start", "settle"}:
         raise HTTPException(status_code=400, detail="Invalid phase")
@@ -414,10 +428,13 @@ def execute_bot_trade(
             raise HTTPException(status_code=400, detail="A trade is already pending")
 
         # Reserve the stake
-        users_collection.update_one(
-            {"_id": user["_id"]},
-            {"$inc": {"balance": -payload.amount}}
+        reserved = users_collection.find_one_and_update(
+            {"_id": user["_id"], balance_field: {"$gte": payload.amount}},
+            {"$inc": {balance_field: -payload.amount}},
+            return_document=ReturnDocument.AFTER,
         )
+        if reserved is None:
+            raise HTTPException(status_code=400, detail="Trade amount cannot exceed account balance")
         
         _user_pending_trades[user_id] = {
             "amount": payload.amount,
@@ -425,6 +442,7 @@ def execute_bot_trade(
             "side": side,
             "duration": getattr(payload, "duration", 60),
             "started_at": datetime.now().isoformat(),
+            "account_type": account_type,
         }
 
         return BotTradeResponse(
@@ -433,7 +451,7 @@ def execute_bot_trade(
             amount=payload.amount,
             win=False,
             delta=0.0,
-            balance=round(balance - payload.amount, 2),
+            balance=round(float(reserved.get(balance_field, 0)), 2),
             message="Trade started and stake reserved",
         )
 
@@ -442,34 +460,25 @@ def execute_bot_trade(
     if pending_trade is None:
         raise HTTPException(status_code=400, detail="No pending trade to settle")
 
-    # Execute trade through trading engine if session active
-    try:
-        if user_id in _user_sessions:
-            result = trading_engine.execute_trade(
-                pair=pending_trade["pair"],
-                amount=pending_trade["amount"],
-                direction=pending_trade["side"]
-            )
-            win = result["is_win"]
-            delta = result.get("delta", 0)
-        else:
-            # Fallback to simple random outcome
-            win = random.random() < 0.7
-            delta = compute_trade_delta(pending_trade["amount"], win)
-    except RuntimeError:
-        # No active session, use simple logic
+    account_type = pending_trade.get("account_type", "wallet")
+    balance_field = {"wallet": "balance", "basic-funded": "basic_funded_balance", "pro-funded": "pro_funded_balance"}[account_type]
+    cycle_key = f"{user_id}:{account_type}"
+    if account_type in FUNDED_WIN_COUNTS:
+        cycle = _user_outcome_cycles.setdefault(cycle_key, [])
+        if not cycle:
+            cycle.extend(generate_random_win_rate_outcomes(FUNDED_WIN_COUNTS[account_type]))
+        win = cycle.pop(0) == "W"
+    else:
         win = random.random() < 0.7
-        delta = compute_trade_delta(pending_trade["amount"], win)
+    delta = compute_trade_delta(pending_trade["amount"], win)
 
     delta = compute_trade_delta(pending_trade["amount"], win)
     # The stake was deducted when the trade started. On a loss there is no
     # further balance change; on a win, credit the existing 190% payout.
-    new_balance = round(balance + delta, 2) if win else round(balance, 2)
-    
-    users_collection.update_one(
-        {"_id": user["_id"]},
-        {"$set": {"balance": new_balance}}
-    )
+    current = users_collection.find_one({"_id": user["_id"]}) or {}
+    reserved_balance = float(current.get(balance_field, 0))
+    new_balance = round(reserved_balance + (pending_trade["amount"] * WIN_PROFIT_RATE if win else 0), 2)
+    users_collection.update_one({"_id": user["_id"]}, {"$set": {balance_field: new_balance}})
 
     return BotTradeResponse(
         pair=pending_trade["pair"],
@@ -515,7 +524,9 @@ def cancel_pending_trade(
         )
         # Fetch updated balance
         updated_user = db.users.find_one({"_id": user["_id"]}, {"balance": 1})
-        refunded_balance = float(updated_user.get("balance", 0)) if updated_user else float(user.get("balance", 0)) + pending.get("amount", 0)
+        balance_field = {"wallet": "balance", "basic-funded": "basic_funded_balance", "pro-funded": "pro_funded_balance"}[pending.get("account_type", "wallet")]
+        updated_user = db.users.find_one({"_id": user["_id"]}, {balance_field: 1})
+        refunded_balance = float(updated_user.get(balance_field, 0)) if updated_user else pending.get("amount", 0)
     except Exception:
         raise HTTPException(status_code=500, detail="Failed to refund stake")
 

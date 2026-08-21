@@ -9,6 +9,7 @@ from app.core.database import get_db
 from app.schemas.admin import AdminStats
 from app.schemas.transaction import TransactionPublic, TransactionResolve
 from app.schemas.user import UserAdminView
+from app.api.routes.transactions import WITHDRAWAL_BALANCE_FIELDS
 from app.services.referral import REFERRAL_BONUS, should_credit_referral_bonus
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -73,11 +74,19 @@ def stats(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
     )
 
 
+def _user_doc_to_response(doc: dict) -> dict:
+    """Convert MongoDB user document to response format"""
+    if doc is None:
+        return None
+    doc["id"] = str(doc.get("_id", ""))
+    return doc
+
+
 @router.get("/users", response_model=list[UserAdminView])
 def list_users(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
     users_collection = db.users
     users = list(users_collection.find().sort("created_at", -1))
-    return users
+    return [_user_doc_to_response(user) for user in users]
 
 
 @router.get("/transactions", response_model=list[TransactionPublic])
@@ -175,9 +184,10 @@ def resolve_transaction(
     else:  # rejected
         if tx["type"] == "withdrawal":
             # Refund the reserved amount.
+            balance_field = WITHDRAWAL_BALANCE_FIELDS.get(tx.get("account_name"), ("balance", 0))[0]
             users_collection.update_one(
                 {"_id": user["_id"]},
-                {"$inc": {"balance": tx["amount"]}}
+                {"$inc": {balance_field: tx["amount"]}}
             )
 
     transactions_collection.update_one(

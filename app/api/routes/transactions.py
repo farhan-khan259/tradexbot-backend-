@@ -12,6 +12,11 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 MIN_DEPOSIT = 30
 MIN_WITHDRAWAL = 100
+WITHDRAWAL_BALANCE_FIELDS = {
+    "Wallet": ("balance", 0),
+    "Basic Funded": ("basic_funded_balance", 700),
+    "Pro Funded": ("pro_funded_balance", 1500),
+}
 
 
 def _tx_doc_to_response(doc: dict) -> dict:
@@ -82,15 +87,27 @@ def request_withdrawal(
         raise HTTPException(status_code=400, detail="Please enter your wallet address")
     if not payload.network:
         raise HTTPException(status_code=400, detail="Please choose the network/chain")
-    if payload.amount > float(user.get("balance", 0)):
+    source = WITHDRAWAL_BALANCE_FIELDS.get(payload.account_name)
+    if source is None:
+        raise HTTPException(status_code=400, detail="Please select a valid withdrawal source")
+    balance_field, minimum_balance = source
+    current_balance = float(user.get(balance_field, 0))
+    if current_balance < minimum_balance:
+        raise HTTPException(
+            status_code=400,
+            detail=f"{payload.account_name} withdrawals are available once the balance reaches ${minimum_balance:,.0f}",
+        )
+    if payload.amount > current_balance:
         raise HTTPException(status_code=400, detail="Insufficient balance")
 
     # Reserve funds immediately
     users_collection = db.users
-    users_collection.update_one(
-        {"_id": user["_id"]},
-        {"$inc": {"balance": -payload.amount}}
+    reserved = users_collection.update_one(
+        {"_id": user["_id"], balance_field: {"$gte": payload.amount}},
+        {"$inc": {balance_field: -payload.amount}},
     )
+    if reserved.modified_count != 1:
+        raise HTTPException(status_code=400, detail="Insufficient balance")
     
     tx_doc = {
         "user_id": str(user["_id"]),

@@ -10,6 +10,7 @@ class BotPurchaseResponse(BaseModel):
     balance: float
     purchased_bot_ids: list[str]
     funded_credit: float = 0
+    funded_balance: float = 0
 
 
 class BotTradeRequest(BaseModel):
@@ -18,6 +19,7 @@ class BotTradeRequest(BaseModel):
     phase: str = Field(default="start")
     # Duration in seconds for a trade session (used to restore after reload)
     duration: int = Field(default=60, gt=0)
+    account_type: str = Field(default="wallet", pattern="^(wallet|basic-funded|pro-funded)$")
 
 
 class BotTradeResponse(BaseModel):

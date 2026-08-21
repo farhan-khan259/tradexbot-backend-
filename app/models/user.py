@@ -23,6 +23,8 @@ class User(UserBase):
     is_active: bool = True
     is_admin: bool = False
     balance: float = 0.0
+    basic_funded_balance: float = 0.0
+    pro_funded_balance: float = 0.0
     purchased_bot_ids: list[str] = []
     referral_code: str
     referred_by_id: Optional[str] = None
@@ -48,6 +50,8 @@ class UserDocument(dict):
             "is_active": user.is_active,
             "is_admin": user.is_admin,
             "balance": user.balance,
+            "basic_funded_balance": user.basic_funded_balance,
+            "pro_funded_balance": user.pro_funded_balance,
             "purchased_bot_ids": user.purchased_bot_ids,
             "referral_code": user.referral_code,
             "referred_by_id": user.referred_by_id,

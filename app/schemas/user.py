@@ -12,6 +12,8 @@ class UserPublic(BaseModel):
     is_active: bool
     is_admin: bool
     balance: float
+    basic_funded_balance: float = 0.0
+    pro_funded_balance: float = 0.0
     purchased_bot_ids: list[str] = []
     referral_code: str
     created_at: datetime

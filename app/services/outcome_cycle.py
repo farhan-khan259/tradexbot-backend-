@@ -38,3 +38,10 @@ def generate_balanced_outcomes(total_trades: int = 10, wins: int = 5, losses: in
         raise RuntimeError("Unable to build a balanced outcome sequence")
 
     return outcomes
+
+
+def generate_random_win_rate_outcomes(wins: int, total_trades: int = 10) -> List[str]:
+    """Return a randomized trade block with an exact number of wins."""
+    if wins < 0 or wins > total_trades:
+        raise ValueError("wins must be between zero and total_trades")
+    return random.sample(["W"] * wins + ["L"] * (total_trades - wins), total_trades)
