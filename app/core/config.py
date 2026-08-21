@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24
     ALGORITHM: str = "HS256"
+    TWO_FACTOR_ISSUER: str = "TradeXBot"
+    PAPER_TRADING_ENABLED: bool = False
+    MAX_RISK_PER_TRADE: float = 0.01
+    MAX_POSITION_SIZE: float = 0.25
+    MAX_LEVERAGE: float = 3.0
+    MARKET_DATA_BASE_URL: str = "https://api.binance.com"
+    MARKET_DATA_TIMEOUT_SECONDS: int = 8
 
     # Demo: return the password-reset token in the API response (no email service wired up).
     # Set false in production — tokens must only be delivered out-of-band via email.

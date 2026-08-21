@@ -7,6 +7,8 @@ from pymongo.database import Database
 from app.api.deps import get_current_user
 from app.core.database import get_db
 from app.schemas.transaction import TransactionCreate, TransactionPublic
+from app.services.audit import record_audit
+from app.services.totp import decrypt_secret, verify as verify_totp
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -79,6 +81,11 @@ def request_withdrawal(
     user: dict = Depends(get_current_user),
     db: Database = Depends(get_db),
 ):
+    if user.get("two_factor_enabled"):
+        encrypted = user.get("two_factor_secret")
+        if not encrypted or not payload.two_factor_code or not verify_totp(decrypt_secret(encrypted), payload.two_factor_code):
+            record_audit(db, str(user["_id"]), "withdrawal_requested", "rejected", "transaction")
+            raise HTTPException(status_code=401, detail="A valid two-factor code is required for withdrawals")
     if payload.amount < MIN_WITHDRAWAL:
         raise HTTPException(status_code=400, detail=f"Minimum withdrawal is ${MIN_WITHDRAWAL}")
     if not payload.account_name:
@@ -126,4 +133,5 @@ def request_withdrawal(
     transactions_collection = db.transactions
     result = transactions_collection.insert_one(tx_doc)
     tx_doc["_id"] = result.inserted_id
+    record_audit(db, str(user["_id"]), "withdrawal_requested", "success", str(result.inserted_id), {"amount": payload.amount})
     return _tx_doc_to_response(tx_doc)

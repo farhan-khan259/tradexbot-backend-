@@ -1,4 +1,5 @@
 from contextlib import asynccontextmanager
+import asyncio
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -10,7 +11,9 @@ from typing import Dict, List
 from app.core.config import settings
 from app.services.outcome_cycle import generate_balanced_outcomes
 from app.core.database import connect_to_mongo, close_mongo_connection, get_db
-from app.api.routes import auth, transactions, referrals, admin, bot
+from app.api.routes import auth, transactions, referrals, admin, bot, dashboard, security, notifications, kyc, trades, market
+from app.core.security import decode_token
+from bson import ObjectId
 from app.services.seed import seed_admin
 
 # In-memory state for demo accounts (persist for process lifetime)
@@ -85,6 +88,12 @@ app.include_router(transactions.router, prefix=api)
 app.include_router(referrals.router, prefix=api)
 app.include_router(admin.router, prefix=api)
 app.include_router(bot.router, prefix=api)
+app.include_router(dashboard.router, prefix=api)
+app.include_router(security.router, prefix=api)
+app.include_router(notifications.router, prefix=api)
+app.include_router(kyc.router, prefix=api)
+app.include_router(trades.router, prefix=api)
+app.include_router(market.router, prefix=api)
 
 
 # Pydantic models for account endpoints
@@ -163,3 +172,26 @@ async def websocket_endpoint(websocket: WebSocket, account_id: str):
             ws_connections[account_id].remove(websocket)
         except Exception:
             pass
+
+
+@app.websocket("/ws/dashboard")
+async def dashboard_websocket(websocket: WebSocket, token: str):
+    """Authenticated dashboard stream; sends fresh account state on a bounded cadence."""
+    try:
+        payload = decode_token(token)
+        user_id = payload.get("sub")
+        user = get_db().users.find_one({"_id": ObjectId(user_id)})
+        if not user or not user.get("is_active", False):
+            await websocket.close(code=4401)
+            return
+    except Exception:
+        await websocket.close(code=4401)
+        return
+
+    await websocket.accept()
+    try:
+        while True:
+            await websocket.send_json({"type": "dashboard", "data": dashboard.dashboard(user, get_db())})
+            await asyncio.sleep(10)
+    except (WebSocketDisconnect, RuntimeError):
+        return

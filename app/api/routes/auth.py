@@ -24,6 +24,7 @@ from app.schemas.auth import (
 from app.schemas.user import UserPublic
 from app.services.referral import generate_referral_code
 from app.services.mail import send_password_reset_otp_email
+from app.services.totp import decrypt_secret, verify as verify_totp
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -79,7 +80,7 @@ def register(payload: RegisterRequest, db: Database = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
-def login(form: OAuth2PasswordRequestForm = Depends(), db: Database = Depends(get_db)):
+def login(form: OAuth2PasswordRequestForm = Depends(), two_factor_code: str | None = None, db: Database = Depends(get_db)):
     users_collection = db.users
     user = users_collection.find_one({"email": form.username})
     
@@ -87,6 +88,14 @@ def login(form: OAuth2PasswordRequestForm = Depends(), db: Database = Depends(ge
         raise HTTPException(status_code=401, detail="Incorrect email or password")
     if not user.get("is_active", False):
         raise HTTPException(status_code=403, detail="Account disabled")
+    if user.get("two_factor_enabled"):
+        encrypted = user.get("two_factor_secret")
+        totp_valid = bool(encrypted and two_factor_code and verify_totp(decrypt_secret(encrypted), two_factor_code))
+        backup_valid = bool(two_factor_code and two_factor_code in user.get("two_factor_backup_codes", []))
+        if not totp_valid and not backup_valid:
+            raise HTTPException(status_code=401, detail="Two-factor authentication code required or invalid")
+        if backup_valid:
+            users_collection.update_one({"_id": user["_id"]}, {"$pull": {"two_factor_backup_codes": two_factor_code}})
     
     return Token(access_token=create_access_token(str(user["_id"])))
 

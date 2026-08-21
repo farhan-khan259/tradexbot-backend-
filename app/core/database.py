@@ -39,6 +39,13 @@ def _create_indexes() -> None:
     _db.transactions.create_index([("user_id", ASCENDING)])
     _db.transactions.create_index([("created_at", ASCENDING)])
     _db.transactions.create_index([("status", ASCENDING)])
+
+    _db.trades.create_index([("user_id", ASCENDING), ("opened_at", ASCENDING)])
+    _db.trades.create_index([("user_id", ASCENDING), ("status", ASCENDING), ("closed_at", ASCENDING)])
+    _db.notifications.create_index([("status", ASCENDING), ("created_at", ASCENDING)])
+    _db.notification_reads.create_index([("user_id", ASCENDING), ("notification_id", ASCENDING)], unique=True)
+    _db.kyc.create_index([("user_id", ASCENDING)], unique=True)
+    _db.audit_logs.create_index([("user_id", ASCENDING), ("created_at", ASCENDING)])
     
     # Referrals collection indexes
     _db.referrals.create_index([("referrer_id", ASCENDING)])

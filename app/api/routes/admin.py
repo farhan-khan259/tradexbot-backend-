@@ -11,8 +11,20 @@ from app.schemas.transaction import TransactionPublic, TransactionResolve
 from app.schemas.user import UserAdminView
 from app.api.routes.transactions import WITHDRAWAL_BALANCE_FIELDS
 from app.services.referral import REFERRAL_BONUS, should_credit_referral_bonus
+from app.api.routes.notifications import NotificationCreate
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+class NotificationAdminCreate(NotificationCreate):
+    target_user_ids: list[str] | None = None
+    status: str = Field(default="draft", pattern="^(draft|published|expired)$")
+
+
+class KYCReview(BaseModel):
+    status: str = Field(pattern="^(verified|rejected|resubmission_required)$")
+    review_notes: str | None = Field(default=None, max_length=2000)
 
 
 @router.get("/stats", response_model=AdminStats)
@@ -72,6 +84,59 @@ def stats(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
         withdrawals_total_amount=float(withdrawals_total_amount or 0),
         referral_bonus_total=float(referral_bonus_total or 0),
     )
+
+
+@router.get("/notifications")
+def list_admin_notifications(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    return [{**{key: value for key, value in doc.items() if key != "_id"}, "id": str(doc["_id"])} for doc in db.notifications.find().sort("created_at", -1)]
+
+
+@router.post("/notifications", status_code=201)
+def create_notification(payload: NotificationAdminCreate, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    doc = payload.model_dump()
+    doc["created_at"] = datetime.now(timezone.utc)
+    result = db.notifications.insert_one(doc)
+    doc["id"] = str(result.inserted_id)
+    doc.pop("_id", None)
+    return doc
+
+
+@router.patch("/notifications/{notification_id}/publish")
+def publish_notification(notification_id: str, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    try:
+        object_id = ObjectId(notification_id)
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail="Notification not found") from exc
+    result = db.notifications.update_one({"_id": object_id}, {"$set": {"status": "published"}})
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "published"}
+
+
+@router.get("/kyc")
+def list_kyc(_: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    return [{**doc, "id": str(doc.pop("_id"))} for doc in db.kyc.find({}, {"identity_document": 0, "proof_of_address": 0, "selfie_document": 0}).sort("updated_at", -1)]
+
+
+@router.get("/audit-logs")
+def audit_logs(limit: int = 100, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    return [{**doc, "id": str(doc.pop("_id"))} for doc in db.audit_logs.find().sort("created_at", -1).limit(min(max(limit, 1), 500))]
+
+
+@router.get("/kyc/{user_id}/documents")
+def kyc_documents(user_id: str, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    doc = db.kyc.find_one({"user_id": user_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="KYC submission not found")
+    return {"identity_document": doc.get("identity_document"), "proof_of_address": doc.get("proof_of_address"), "selfie_document": doc.get("selfie_document")}
+
+
+@router.patch("/kyc/{user_id}")
+def review_kyc(user_id: str, payload: KYCReview, _: dict = Depends(get_current_admin), db: Database = Depends(get_db)):
+    result = db.kyc.update_one({"user_id": user_id}, {"$set": {"status": payload.status, "review_notes": payload.review_notes, "updated_at": datetime.now(timezone.utc)}})
+    if result.matched_count != 1:
+        raise HTTPException(status_code=404, detail="KYC submission not found")
+    return {"status": payload.status}
 
 
 def _user_doc_to_response(doc: dict) -> dict:

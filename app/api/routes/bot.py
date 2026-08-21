@@ -285,7 +285,7 @@
 
 import random
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from pymongo.database import Database
 from pymongo import ReturnDocument
 
@@ -296,6 +296,7 @@ from app.core.database import get_db
 from app.schemas.bot import BotPurchaseRequest, BotPurchaseResponse, BotTradeRequest, BotTradeResponse
 from app.services.trading_engine import trading_engine
 from app.services.outcome_cycle import generate_random_win_rate_outcomes
+from app.services.audit import record_audit
 
 router = APIRouter(prefix="/bot", tags=["bot"])
 
@@ -311,6 +312,7 @@ FUNDED_WIN_COUNTS = {"basic-funded": 6, "pro-funded": 8}
 _user_sessions: dict[str, dict] = {}
 _user_pending_trades: dict[str, dict] = {}
 _user_outcome_cycles: dict[str, list[str]] = {}
+_user_bot_controls: dict[str, str] = {}
 
 
 def compute_trade_delta(amount: float, win: bool) -> float:
@@ -375,6 +377,8 @@ def start_bot_session(
     
     if user_id in _user_sessions:
         raise HTTPException(status_code=400, detail="Session already active")
+    if _user_bot_controls.get(user_id) == "emergency_stopped":
+        raise HTTPException(status_code=423, detail="Emergency stop is active. Reset it before starting the bot.")
     
     balance = float(user.get("balance", 0))
     session = trading_engine.start_session(pair=pair, timeframe=timeframe, initial_balance=balance)
@@ -385,6 +389,7 @@ def start_bot_session(
         "initial_balance": balance,
         "started_at": session["start_time"].isoformat()
     }
+    _user_bot_controls[user_id] = "running"
     
     return {
         "status": "started",
@@ -403,6 +408,9 @@ def execute_bot_trade(
 ):
     """Execute a bot trade (start or settle phase)"""
     user_id = str(user["_id"])
+    control = _user_bot_controls.get(user_id, "running")
+    if payload.phase == "start" and control in {"paused", "stopped", "emergency_stopped"}:
+        raise HTTPException(status_code=423, detail=f"Bot is {control.replace('_', ' ')}")
     users_collection = db.users
     account_type = payload.account_type
     balance_field = {
@@ -480,6 +488,21 @@ def execute_bot_trade(
     new_balance = round(reserved_balance + (pending_trade["amount"] * WIN_PROFIT_RATE if win else 0), 2)
     users_collection.update_one({"_id": user["_id"]}, {"$set": {balance_field: new_balance}})
 
+    now = datetime.now(timezone.utc)
+    db.trades.insert_one({
+        "user_id": user_id,
+        "pair": pending_trade["pair"],
+        "side": pending_trade["side"],
+        "amount": float(pending_trade["amount"]),
+        "profit_loss": float(delta),
+        "status": "closed",
+        "source": "AI",
+        "account_type": account_type,
+        "opened_at": pending_trade.get("started_at", now),
+        "closed_at": now,
+    })
+    record_audit(db, user_id, "ai_trade_settled", "success", pending_trade["pair"], {"profit_loss": delta})
+
     return BotTradeResponse(
         pair=pending_trade["pair"],
         side=pending_trade["side"],
@@ -489,6 +512,46 @@ def execute_bot_trade(
         balance=new_balance,
         message="Trade settled",
     )
+
+
+def _set_bot_control(user_id: str, state: str) -> dict:
+    _user_bot_controls[user_id] = state
+    if user_id in _user_sessions:
+        _user_sessions[user_id]["status"] = state
+    return {"status": state.upper()}
+
+
+@router.get("/status")
+def bot_status(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    return {
+        "status": _user_bot_controls.get(user_id, "stopped").upper(),
+        "session": _user_sessions.get(user_id),
+        "emergency_stop": _user_bot_controls.get(user_id) == "emergency_stopped",
+    }
+
+
+@router.post("/start")
+def start_bot(user: dict = Depends(get_current_user)):
+    user_id = str(user["_id"])
+    if _user_bot_controls.get(user_id) == "emergency_stopped":
+        raise HTTPException(status_code=423, detail="Emergency stop is active. Reset it before starting the bot.")
+    return _set_bot_control(user_id, "running")
+
+
+@router.post("/pause")
+def pause_bot(user: dict = Depends(get_current_user)):
+    return _set_bot_control(str(user["_id"]), "paused")
+
+
+@router.post("/stop")
+def stop_bot(user: dict = Depends(get_current_user)):
+    return _set_bot_control(str(user["_id"]), "stopped")
+
+
+@router.post("/emergency-stop")
+def emergency_stop_bot(user: dict = Depends(get_current_user)):
+    return _set_bot_control(str(user["_id"]), "emergency_stopped")
 
 
 @router.get("/trade/pending")
