@@ -15,8 +15,8 @@ MIN_DEPOSIT = 30
 MIN_WITHDRAWAL = 100
 WITHDRAWAL_BALANCE_FIELDS = {
     "Wallet": ("balance", 0),
-    "Basic Funded": ("basic_funded_balance", 700),
-    "Pro Funded": ("pro_funded_balance", 1500),
+    "AI Funded Trader": ("basic_funded_balance", 700),
+    "AI Funded Pro": ("pro_funded_balance", 1500),
 }
 
 
