@@ -9,6 +9,7 @@ class UserPublic(BaseModel):
     id: str
     email: EmailStr
     full_name: str
+    phone: str | None = None
     is_active: bool
     is_admin: bool
     balance: float
