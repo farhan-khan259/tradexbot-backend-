@@ -6,7 +6,7 @@ from app.services.referral import generate_referral_code
 
 
 def seed_admin(db: Database) -> None:
-    """Ensure the configured TradeXBot admin account exists and matches the expected credentials."""
+    """Create the configured admin if needed without resetting an existing password."""
     users_collection = db.users
 
     admin_email = settings.FIRST_ADMIN_EMAIL.strip().lower()
@@ -34,7 +34,6 @@ def seed_admin(db: Database) -> None:
             {"_id": existing_admin["_id"]},
             {"$set": {
                 "full_name": "TradeXBot Admin",
-                "hashed_password": admin_password_hash,
                 "is_admin": True,
                 "is_active": True,
                 "balance": 0.0,
@@ -53,7 +52,6 @@ def seed_admin(db: Database) -> None:
             {"$set": {
                 "email": admin_email,
                 "full_name": "TradeXBot Admin",
-                "hashed_password": admin_password_hash,
                 "is_admin": True,
                 "is_active": True,
                 "balance": 0.0,
