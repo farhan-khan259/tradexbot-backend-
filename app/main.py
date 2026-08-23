@@ -11,7 +11,7 @@ from typing import Dict, List
 from app.core.config import settings
 from app.services.outcome_cycle import generate_balanced_outcomes
 from app.core.database import connect_to_mongo, close_mongo_connection, get_db
-from app.api.routes import auth, transactions, referrals, admin, bot, dashboard, security, notifications, kyc, trades, market
+from app.api.routes import auth, transactions, referrals, admin, bot, dashboard, security, notifications, kyc, trades, market, manual_trading
 from app.core.security import decode_token
 from bson import ObjectId
 from app.services.seed import seed_admin
@@ -94,6 +94,7 @@ app.include_router(notifications.router, prefix=api)
 app.include_router(kyc.router, prefix=api)
 app.include_router(trades.router, prefix=api)
 app.include_router(market.router, prefix=api)
+app.include_router(manual_trading.router, prefix=api)
 
 
 # Pydantic models for account endpoints
