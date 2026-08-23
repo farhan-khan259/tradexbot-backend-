@@ -91,6 +91,9 @@ def request_withdrawal(
     source = WITHDRAWAL_BALANCE_FIELDS.get(payload.account_name)
     if source is None:
         raise HTTPException(status_code=400, detail="Please select a valid withdrawal source")
+    kyc_submission = db.kyc.find_one({"user_id": str(user["_id"]), "status": "verified"}, {"_id": 1})
+    if not kyc_submission:
+        raise HTTPException(status_code=403, detail="KYC verification is mandatory for withdrawal")
     balance_field, minimum_balance = source
     current_balance = float(user.get(balance_field, 0))
     if current_balance < minimum_balance:
