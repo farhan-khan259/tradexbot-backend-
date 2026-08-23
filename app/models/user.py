@@ -11,6 +11,7 @@ def _utcnow() -> datetime:
 class UserBase(BaseModel):
     email: EmailStr
     full_name: str
+    phone: Optional[str] = None
 
 
 class UserCreate(UserBase):
@@ -46,6 +47,7 @@ class UserDocument(dict):
         doc = {
             "email": user.email,
             "full_name": user.full_name,
+            "phone": user.phone,
             "hashed_password": hashed_password,
             "is_active": user.is_active,
             "is_admin": user.is_admin,
