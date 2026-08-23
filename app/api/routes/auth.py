@@ -17,6 +17,8 @@ from app.core.security import (
 from app.schemas.auth import (
     ForgotPasswordRequest,
     ForgotPasswordResponse,
+    ChangePasswordRequest,
+    ProfileUpdateRequest,
     RegisterRequest,
     ResetPasswordRequest,
     Token,
@@ -60,6 +62,7 @@ def register(payload: RegisterRequest, db: Database = Depends(get_db)):
     user_doc = {
         "email": payload.email,
         "full_name": payload.full_name,
+        "phone": payload.phone,
         "hashed_password": hash_password(payload.password),
         "is_active": True,
         "is_admin": False,
@@ -103,6 +106,38 @@ def login(form: OAuth2PasswordRequestForm = Depends(), two_factor_code: str | No
 @router.get("/me", response_model=UserPublic)
 def me(user: dict = Depends(get_current_user)):
     return _user_doc_to_response(user)
+
+
+@router.patch("/profile", response_model=UserPublic)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"full_name": payload.full_name.strip(), "phone": payload.phone.strip() if payload.phone else None}},
+    )
+    updated_user = {**user, "full_name": payload.full_name.strip(), "phone": payload.phone.strip() if payload.phone else None}
+    return _user_doc_to_response(updated_user)
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    payload: ChangePasswordRequest,
+    user: dict = Depends(get_current_user),
+    db: Database = Depends(get_db),
+):
+    if not verify_password(payload.current_password, user.get("hashed_password", "")):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    if payload.new_password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="New password and confirmation do not match")
+    if verify_password(payload.new_password, user.get("hashed_password", "")):
+        raise HTTPException(status_code=400, detail="New password must be different from your current password")
+    db.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"hashed_password": hash_password(payload.new_password)}},
+    )
 
 
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
